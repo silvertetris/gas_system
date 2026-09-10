@@ -73,6 +73,54 @@ PI_D2P_ERAS = [
 SEGMENT_GAP_HOURS = 24.0
 
 # ---------------------------------------------------------------------------
+# HTR-31P 히터 설계계수 (제작도서 OCR 추출, 2026-09-10)
+#   출처: `경인 22-영종관리소진공식 가스히터(HTR-31P)-제작도서.pdf` 열전달 계산서 SHEET 1~3
+#         (원일티엔아이 WONIL, PO-09-029, 2009.07.06 승인). 신뢰도 T1(1차 원본).
+#   환산·상세 근거: docs/htr31p_flow.md §5.
+#   ⚠ 이 값들은 "설계점(design point)" 상수다. 운전 중 실제 U는 오염·열화로 변하고(그게 예측 대상)
+#      수조 열용량 M_w·c_w는 아직 미확보 → H1/H2에서 U·A는 초기값/prior로 쓰고 열화항으로 보정할 것.
+# ---------------------------------------------------------------------------
+KCAL_TO_J = 4186.8           # 1 kcal = 4186.8 J  (kcal/h → W 는 ×KCAL_TO_J/3600)
+
+# 열전달 (튜브번들: 공정가스 ↔ 열매체)
+HTR_U_KCAL = 513.6           # 총괄전열계수 U [kcal/m²·h·℃] (내막 2048 / 외막 863.1 / 오염계수 포함)
+HTR_AREA_M2 = 27.1           # 전열면적 A [m²] (106본 × π × Ø25.4mm × L3200mm)
+HTR_UA_W_PER_K = HTR_U_KCAL * HTR_AREA_M2 * KCAL_TO_J / 3600.0   # U·A ≈ 16,188 W/K (=16.2 kW/K)
+
+# 설계점 열·물질수지
+HTR_DESIGN_FLOW_NM3_H = 65_000.0     # 설계 가스 체적유량 [Nm³/h] (정압기 61,900과 정합)
+HTR_GAS_DENSITY_KG_NM3 = 0.80683     # 가스 밀도 [kg/Nm³] (비중 0.624, Air=1)
+HTR_DESIGN_MGAS_KG_S = HTR_DESIGN_FLOW_NM3_H * HTR_GAS_DENSITY_KG_NM3 / 3600.0   # ≈ 14.57 kg/s (=52,444 kg/h)
+HTR_CP_GAS_J_KGK = 2739.8            # 가스 정압비열 c_p [J/kg·K] (=0.654 kcal/kg·℃; 문서 06 §2 근사 2.5보다 정밀)
+HTR_BATH_TEMP_C = 80.0               # 열매체(수조) 설계온도 [℃]
+HTR_DESIGN_LMTD_C = 68.19            # 설계 대수평균온도차 [℃] (bath 80 / gas 0→22.4℃)
+
+# 설계 열량 (번들 흡수열) — 제작도서 설계기준
+HTR_DESIGN_DUTY_KCAL_H = 860_000.0                              # 설계 흡수열 [kcal/h] (=0.86 Gcal/h)
+HTR_DESIGN_DUTY_W = HTR_DESIGN_DUTY_KCAL_H * KCAL_TO_J / 3600.0  # ≈ 1.0 MW
+#   교차검증: U·A·LMTD = 16,188 × 68.19 ≈ 1.10 MW ≈ 흡수열(1.0MW)+손실 → 설계와 정합.
+
+# ⚠⚠ Q_burner 정정 (H1 구동항) --------------------------------------------------
+#   기존 문서(06_물리식_출처정리.md §2)의 P=52 Gcal/h 는 제작도서 설계열량(0.86 Gcal/h)과 60배 불일치.
+#   물리적으로도 65,000 Nm³/h 를 Δt≈22~35℃ 데우는 데 52 Gcal/h 는 불가능(fire tube 가 860,000 kcal/h
+#   =34.4 m² 기준으로 설계됨; 52 Gcal/h 면 ~2,000 m² 필요). "52"는 설계 질량유량 52,444 kg/h 와 수치가
+#   일치 → 영종설비현황.xlsx 에서 유량을 열량으로 오기입한 것으로 의심. 상세: docs/htr31p_flow.md §5-1.
+#   → 버너 발열 = 번들 흡수열 / 연소효율. 효율은 2015 연소시험(testo) Effg 84~86% → 0.85 채택.
+HTR_COMBUSTION_EFF = 0.85                                       # 연소효율 (2015 연소시험 Effg)
+HTR_QBURNER_DESIGN_W = HTR_DESIGN_DUTY_W / HTR_COMBUSTION_EFF   # ≈ 1.18 MW (≈1.01 Gcal/h)
+HTR_QBURNER_DESIGN_GCAL_H = HTR_QBURNER_DESIGN_W * 3600.0 / KCAL_TO_J / 1e6      # ≈ 1.01 Gcal/h
+# ❌ 폐기: Q_burner = 52 Gcal/h (영종설비현황.xlsx, 60배 오류 의심 — 사용 금지)
+
+# 수조 열용량 M_w·c_w (H1의 dT_bath/dt 계수) — 제작도서 OCR 확보 (2026-09-10)
+#   출처: WEIGHT ANALYSIS OF GAS HEATER(제작도서 p31 "30. LIQUID = 14,512 KG")
+#         + CALCULATION OF VOLUMN(p40, 내부 액체 체적 TOTAL 14.527 m³).
+#   교차검증: 14,512 kg ÷ 14.527 m³ = 999 kg/m³ ≈ 물 밀도 → 진공수조(열매체를 water로 모델링).
+HTR_BATH_LIQUID_MASS_KG = 14_512.0                             # 열매체 충전량 M_w [kg] (체적 14.527 m³와 정합)
+HTR_CW_J_KGK = 1.0 * KCAL_TO_J                                 # 열매체 비열 c_w [J/kg·K] (=1.0 kcal/kg℃, 계산서 WATER)
+HTR_MW_CW_J_PER_K = HTR_BATH_LIQUID_MASS_KG * HTR_CW_J_KGK      # 수조 열용량 ≈ 60.76 MJ/K
+HTR_BATH_TIME_CONST_S = HTR_MW_CW_J_PER_K / HTR_UA_W_PER_K      # τ = M_w·c_w / U·A ≈ 3,754 s (≈63분), H1 스케일 sanity
+
+# ---------------------------------------------------------------------------
 # Alarm(DI/DO 이벤트 로그) — HTR-31P 관련 태그
 # ---------------------------------------------------------------------------
 
