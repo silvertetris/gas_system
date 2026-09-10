@@ -23,11 +23,14 @@ from . import config
 logger = logging.getLogger(__name__)
 
 
+_ALL_INPUT_TAGS = config.TREND_TAGS + config.FLOW_INPUT_TAGS
+
+
 def _read_one_month(path: Path) -> pd.DataFrame:
     df = pd.read_csv(
         path,
-        usecols=["Time", *config.TREND_TAGS],
-        dtype={tag: "float64" for tag in config.TREND_TAGS},
+        usecols=["Time", *_ALL_INPUT_TAGS],
+        dtype={tag: "float64" for tag in _ALL_INPUT_TAGS},
     )
     df["Time"] = pd.to_datetime(df["Time"], errors="coerce")
     return df.dropna(subset=["Time"])
@@ -103,10 +106,41 @@ def add_era_normalization(df: pd.DataFrame, column: str = "PI-D2P") -> pd.DataFr
     return df
 
 
+def estimate_gas_flow(df: pd.DataFrame) -> pd.DataFrame:
+    """정압기(PCV-41P) 밸브 유동식으로 히터 통과 가스유량을 역산한다 (1차 근사치).
+
+    문서 06 §3-1 G1식: Q = Cv · f(z) · sqrt((P_in^2 - P_out^2) / (G·T))
+    배관이 히터→정압기 직렬 연결(중간 저장/분기 없음)이므로 정압기 통과유량을
+    히터 통과유량(m_gas)의 근사치로 쓴다 (질량보존). Trend에 유량계(FI61x)가 전량
+    NULL이라 이 방법이 사실상 유일한 대안이다 (문서 04 §5-1).
+
+    ⚠ config.GAS_SG·PCV41P_CV는 P호기 자체가 아닌 남사 문서의 동일 모델 카탈로그 값(T3 proxy)이고,
+    f(z)는 실제 특성곡선 대신 선형 근사다. 절대량이 아니라 상대적 추이(gas_flow_proxy)로만 쓸 것 —
+    Cv/특성곡선을 영종 P호기 정압기 도서로 확인하기 전까지 절대치를 신뢰하지 말 것.
+    """
+    z_raw = df["ZI41P"]
+    z_pct = z_raw.where(z_raw <= config.ZI41P_RESCALE_ABOVE, z_raw / 5.0).clip(upper=100.0)
+    z_frac = (z_pct / 100.0).clip(lower=0.0)
+
+    p_in = df["PI21X"]
+    p_out = df["PI43O"]
+    t_kelvin = df[["TI21Y", "TI21Z"]].mean(axis=1) + 273.15
+
+    dp_sq = (p_in**2 - p_out**2).clip(lower=0.0)
+    with np.errstate(invalid="ignore", divide="ignore"):
+        q_proxy = config.PCV41P_CV * z_frac * np.sqrt(dp_sq / (config.GAS_SG * t_kelvin))
+
+    df["ZI41P_frac"] = z_frac
+    df["gas_flow_proxy"] = q_proxy
+    df["control_error_p"] = df["PI43O"] - df["RSF41P"]  # 문서 05 §4-3: 열화지표 후보(e = PV - SP)
+    return df
+
+
 def run_trend_pipeline() -> pd.DataFrame:
-    """Trend 전처리 전체 실행: 로드 → 중복제거 → 1분 그리드 → era 정규화."""
+    """Trend 전처리 전체 실행: 로드 → 중복제거 → 1분 그리드 → era 정규화 → 유량 역산."""
     df = load_trend_raw()
     df = dedup_by_time(df)
     grid = build_minute_grid(df)
     grid = add_era_normalization(grid, column="PI-D2P")
+    grid = estimate_gas_flow(grid)
     return grid

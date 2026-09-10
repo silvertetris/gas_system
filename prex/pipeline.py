@@ -4,7 +4,10 @@
     .venv/bin/python -m prex.pipeline
 
 출력 (Parquet, config.OUTPUT_DIR):
-    trend_htr31p.parquet        1분 그리드 연속 시계열 (PI21X/TI21Y/TI21Z/TI33P/TI-D2P/PI-D2P + segment_id)
+    trend_htr31p.parquet        1분 그리드 연속 시계열
+                                 (PI21X/TI21Y/TI21Z/TI33P/TI-D2P/PI-D2P + segment_id
+                                  + ZI41P/PI43O/RSF41P + gas_flow_proxy/ZI41P_frac/control_error_p
+                                    — 정압기 밸브식으로 역산한 가스유량 근사치, 문서 04 §5-1 참고)
     alarm_events_htr31p.parquet 정제된 DI/DO 이벤트 long표 (중복 제거 후 전체, SET/RESET 모두 포함)
     fault_events_htr31p.parquet 상승엣지(발생 시점)만 추출한 이벤트표 — 라벨링 다음 단계의 입력
 """
