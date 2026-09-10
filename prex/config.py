@@ -105,11 +105,16 @@ HTR_DESIGN_DUTY_W = HTR_DESIGN_DUTY_KCAL_H * KCAL_TO_J / 3600.0  # ≈ 1.0 MW
 #   물리적으로도 65,000 Nm³/h 를 Δt≈22~35℃ 데우는 데 52 Gcal/h 는 불가능(fire tube 가 860,000 kcal/h
 #   =34.4 m² 기준으로 설계됨; 52 Gcal/h 면 ~2,000 m² 필요). "52"는 설계 질량유량 52,444 kg/h 와 수치가
 #   일치 → 영종설비현황.xlsx 에서 유량을 열량으로 오기입한 것으로 의심. 상세: docs/htr31p_flow.md §5-1.
-#   → 버너 발열 = 번들 흡수열 / 연소효율. 효율은 2015 연소시험(testo) Effg 84~86% → 0.85 채택.
-HTR_COMBUSTION_EFF = 0.85                                       # 연소효율 (2015 연소시험 Effg)
-HTR_QBURNER_DESIGN_W = HTR_DESIGN_DUTY_W / HTR_COMBUSTION_EFF   # ≈ 1.18 MW (≈1.01 Gcal/h)
-HTR_QBURNER_DESIGN_GCAL_H = HTR_QBURNER_DESIGN_W * 3600.0 / KCAL_TO_J / 1e6      # ≈ 1.01 Gcal/h
-# ❌ 폐기: Q_burner = 52 Gcal/h (영종설비현황.xlsx, 60배 오류 의심 — 사용 금지)
+#   → 버너 설계 발열은 제작도서 "CALCULATION SHEET FOR BURNER"(p278)의 연료 소비량으로 직접 얻는다:
+#        Qg(연료소비) = Qc/Hℓg = 860,000/9,510 = 90 Nm³/h  →  발열 = 90 × 9,510 ≈ 856,000 kcal/h ≈ 0.86 Gcal/h.
+HTR_FUEL_LHV_KCAL_NM3 = 9_510.0                                # 연료가스 저위발열량 Hℓg [kcal/Nm³] (제작도서 p278)
+HTR_FUEL_CONSUMPTION_NM3_H = 90.0                              # 설계 연료 소비량 Qg [Nm³/h] (제작도서 p278, =Qc/Hℓg)
+HTR_QBURNER_DESIGN_W = HTR_FUEL_CONSUMPTION_NM3_H * HTR_FUEL_LHV_KCAL_NM3 * KCAL_TO_J / 3600.0  # ≈ 0.996 MW
+HTR_QBURNER_DESIGN_GCAL_H = HTR_QBURNER_DESIGN_W * 3600.0 / KCAL_TO_J / 1e6      # ≈ 0.86 Gcal/h
+HTR_COMBUSTION_EFF = 0.85                                       # 연소효율(2015 시험 Effg) — 손실 고려 시 실연료 약간↑
+#   주: 제작도서 계산은 연료 LHV heat ≈ 흡수열(860,000 kcal/h)로 잡음(현열, 손실 미분리) → 설계 버너발열 ≈ 0.86 Gcal/h.
+#   실시간 Q_burner(t)는 여전히 미계측(연료 유량계 태그 없음) → H31POH(on/off) × 이 상수로 근사하거나 잠재변수.
+# ❌ 폐기: Q_burner = 52 Gcal/h (영종설비현황.xlsx, 약 60배 오류 의심 — 사용 금지)
 
 # 수조 열용량 M_w·c_w (H1의 dT_bath/dt 계수) — 제작도서 OCR 확보 (2026-09-10)
 #   출처: WEIGHT ANALYSIS OF GAS HEATER(제작도서 p31 "30. LIQUID = 14,512 KG")
