@@ -91,12 +91,12 @@ def burner_state_on_grid(events: pd.DataFrame, grid_index: pd.DatetimeIndex) -> 
 def build_off_samples(trend: pd.DataFrame, burner_raw: pd.Series) -> pd.DataFrame:
     """버너 OFF 연속구간에서 (dT_bath/dt, ΔT=T_bath−T_gas) 유효 샘플을 만든다.
 
-    - T_gas = ½·(mean(TI21Y,TI21Z) + TI33P)  (입·출구 평균)
+    - T_gas = ½·(TI21Z + TI33P)  (입·출구 평균; 입구는 P호기 계열인 TI21Z 단독 — config 주석 참조)
     - 정착시간(SETTLE_MIN) 제거, 최소 런길이/최소 |ΔT|/segment 경계/결측 처리 포함.
     """
     df = trend.copy()
     t_bath = df["TI-D2P"]
-    t_in = df[["TI21Y", "TI21Z"]].mean(axis=1)
+    t_in = df[config.HTR31P_INLET_TAG]
     t_gas = 0.5 * (t_in + df["TI33P"])
     dt_s = df.index.to_series().diff().dt.total_seconds()          # 그리드 간격(초), 보통 60
     dTb_dt = t_bath.diff() / dt_s                                  # dT_bath/dt [℃/s]

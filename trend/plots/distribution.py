@@ -66,9 +66,11 @@ def plot_boxplots(trend: pd.DataFrame) -> Path:
 
 
 def plot_pi_d2p_by_era(trend: pd.DataFrame) -> Path:
-    """PI-D2P는 계기 스팬이 시기(era)별로 달라 원본/정규화값을 era별 박스플롯으로 비교한다.
+    """PI-D2P의 구간(era)별 원본/정규화값 비교 박스플롯.
 
-    문서 근거: prex/config.py PI_D2P_ERAS (연 단위 근사 경계).
+    문서 근거: prex/config.py PI_D2P_ERAS. 경계는 **실측으로 특정한 계단 전이일**
+    (2014-10-21 / 2024-11-01)이다 — 종전 연 단위 근사에서 2026-09-11 수정.
+    ⚠ 이 구간 차이가 "계기 스팬 변경"인지는 아직 확정 아님(docs/htr31p_flow.md §8-3).
     """
     style.apply_style()
     df = trend[["PI-D2P", "PI-D2P_norm", "PI-D2P_era"]].dropna(subset=["PI-D2P_era"])

@@ -3,3 +3,8 @@ numpy==2.4.6
 pyarrow==25.0.1
 matplotlib==3.11.1
 seaborn==0.13.2
+ezdxf==1.4.4
+torch==2.14.0
+optuna==5.0.0
+shap==0.51.0
+scikit-learn==1.9.1

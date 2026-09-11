@@ -15,13 +15,16 @@
     08_alarm_counts_by_tag.png    태그별 이벤트 발생 건수
     09_alarm_category_share.png   분류별 이벤트 발생 건수
     10_alarm_monthly_trend.png    FAULT 이벤트 월별 발생 추이
+    11_eps_ntu_timeseries.png     열교환 효율 ε·NTU 일별 추이 + 유효표본 비율
+    12_eps_by_burner.png          버너 ON/OFF 별 ε·NTU·구동온도차 분포
+    13_eps_yearly.png             연도별 ε 중앙값(열화 신호 후보) + 유효표본수
 """
 from __future__ import annotations
 
 import logging
 
 from . import config, data
-from .plots import alarms, correlation, distribution, missingness, overview
+from .plots import alarms, correlation, distribution, heat_exchange, missingness, overview
 
 
 def main() -> None:
@@ -31,6 +34,7 @@ def main() -> None:
     logging.info("=== 데이터 로드 ===")
     trend = data.load_trend()
     fault_events = data.load_fault_events()
+    alarm_events = data.load_alarm_events()   # 버너 ON/OFF 복원용 (H31POH SET/RESET)
 
     logging.info("=== Trend 개요/분포 그림 ===")
     overview.plot_time_series_overview(trend)
@@ -44,6 +48,11 @@ def main() -> None:
 
     logging.info("=== 결측/커버리지 그림 ===")
     missingness.plot_missing_heatmap(trend)
+
+    logging.info("=== 열교환 지표(ε/NTU) 그림 ===")
+    heat_exchange.plot_eps_timeseries(trend)
+    heat_exchange.plot_eps_by_burner(trend, alarm_events)
+    heat_exchange.plot_eps_yearly(trend, alarm_events)
 
     logging.info("=== 알람/이벤트 그림 ===")
     alarms.plot_alarm_counts_by_tag(fault_events)
