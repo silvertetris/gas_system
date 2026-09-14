@@ -15,6 +15,8 @@
     08_alarm_counts_by_tag.png    태그별 이벤트 발생 건수
     09_alarm_category_share.png   분류별 이벤트 발생 건수
     10_alarm_monthly_trend.png    FAULT 이벤트 월별 발생 추이
+    11_fault_catalog.png          FAULT 태그 카탈로그 (빈도+설명+계통+예측가치)
+    12_fault_subsystem.png        계통별 비중 + 연도별 구성
     11_eps_ntu_timeseries.png     열교환 효율 ε·NTU 일별 추이 + 유효표본 비율
     12_eps_by_burner.png          버너 ON/OFF 별 ε·NTU·구동온도차 분포
     13_eps_yearly.png             연도별 ε 중앙값(열화 신호 후보) + 유효표본수
@@ -58,6 +60,8 @@ def main() -> None:
     alarms.plot_alarm_counts_by_tag(fault_events)
     alarms.plot_alarm_category_share(fault_events)
     alarms.plot_alarm_monthly_trend(fault_events)
+    alarms.plot_fault_catalog(fault_events)
+    alarms.plot_subsystem_share(fault_events)
 
     logging.info("=== 완료: %s ===", config.FIGURE_DIR)
 

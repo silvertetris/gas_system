@@ -71,6 +71,8 @@ TAG_LABELS: dict[str, str] = {
 # 알람 메타 (prex.config 재사용)
 # ---------------------------------------------------------------------------
 ALARM_TAG_META = prex_config.ALARM_TAG_META
+FAULT_SUBSYSTEM = prex_config.FAULT_SUBSYSTEM
+FAULT_PRIORITY = prex_config.FAULT_PRIORITY
 CATEGORY_ORDER = ["FAULT", "STATUS", "CONTROL"]
 
 # ---------------------------------------------------------------------------

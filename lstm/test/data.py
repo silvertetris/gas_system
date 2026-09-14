@@ -104,8 +104,11 @@ class Scaler:
         self.scale_: np.ndarray | None = None
 
     def fit(self, X: np.ndarray) -> "Scaler":
+        # ⚠ nanpercentile 을 써야 한다. LSTM/AE 는 NaN 윈도우를 미리 버려서 문제가 없지만,
+        #   KF 는 결측을 일부러 남긴 채(갱신 건너뛰기로 처리) 스케일러를 태운다.
+        #   일반 percentile 이면 NaN 한 개가 center/scale 을 통째로 NaN 으로 만든다.
         flat = X.reshape(-1, X.shape[-1])
-        q25, q50, q75 = np.percentile(flat, [25, 50, 75], axis=0)
+        q25, q50, q75 = np.nanpercentile(flat, [25, 50, 75], axis=0)
         iqr = q75 - q25
         self.center_ = q50
         self.scale_ = np.where(iqr > 1e-9, iqr, 1.0)     # 상수열(예: burner_on) 보호
@@ -126,3 +129,27 @@ class TargetScaler(Scaler):
 
     def inverse(self, y: np.ndarray) -> np.ndarray:
         return y * self.scale_[0] + self.center_[0]
+
+
+class StandardScaler(Scaler):
+    """평균/표준편차 표준화. **다변수 손실·지표를 쓰는 곳(AE·KF)은 이걸 써야 한다.**
+
+    robust(중앙값/IQR) 스케일러를 다변수에 쓰면 안 되는 이유 — 실측 사례 2건:
+      - AE(2026-09-11): `ZI41P_frac` IQR 0.0037 → 스케일 후 σ 35 → MSE 손실의 99.7% 독식
+      - KF(2026-09-11): 같은 신호 IQR 0.0018 → σ 121 → NIS 130,039 (정상값 1.0)
+      이 신호는 거의 항상 1.0 에 붙어 있다 가끔 0 으로 급락해서 IQR 이 0 에 가깝다.
+
+    표준화하면 모든 피처가 σ=1 이라 손실·지표에 **동등하게** 기여한다.
+    ⚠ 통계는 float64 로 계산한다 — 표본이 1,200만 개면 float32 누적오차가 치명적이다
+      (실측: PI-D2P 평균이 -620 대신 -554.8, σ 가 17.3 → 65.4 로 부풀려짐).
+    """
+
+    def fit(self, X: np.ndarray) -> "StandardScaler":
+        flat = X.reshape(-1, X.shape[-1]).astype(np.float64)
+        self.center_ = np.nanmean(flat, axis=0)
+        sd = np.nanstd(flat, axis=0)
+        self.scale_ = np.where(sd > 1e-9, sd, 1.0)
+        return self
+
+    def inverse(self, X: np.ndarray) -> np.ndarray:
+        return X * self.scale_ + self.center_

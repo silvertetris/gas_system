@@ -6,8 +6,9 @@ __pycache__/
 
 # 대용량 원본 자료 / 전처리 산출물 (git에 커밋하지 않음)
 data/
-prex/output/
-trend/output/
+*/output/
+*/*/output/
+*/*/output_*/
 
 # IDE
 .idea/

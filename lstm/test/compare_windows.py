@@ -26,9 +26,13 @@ from .pipeline import load_best_params, mae, rmse
 logger = logging.getLogger("lstm.test.compare")
 
 WINDOWS = [15, 30, 60, 120, 180]
+# ⚠ 단일 실행으로 비교하면 안 된다. 같은 설정을 시드만 바꿔 돌려도 RMSE 가 ±0.24℃ 흔들리는데,
+#   이는 윈도우 간 차이보다 크다(2026-09-11 실측). 반드시 시드 반복 평균으로 비교할 것.
+SEEDS = [0, 1, 2, 3, 4]
 
 
-def run_one(df: pd.DataFrame, window: int, params: dict) -> dict:
+def run_one(df: pd.DataFrame, window: int, params: dict, seed: int) -> dict:
+    model.set_seed(seed)
     X, y, _, t_target = data.make_windows(df, window=window)
     purge = window + config.HORIZON
     tr_idx, te_idx = data.split_purged(len(X), purge=purge)
@@ -51,13 +55,13 @@ def run_one(df: pd.DataFrame, window: int, params: dict) -> dict:
     fidx = {f: i for i, f in enumerate(config.FEATURES)}
     persist = X_te[:, -1, fidx["TI33P"]]
     out = {
-        "window": window, "n_train": len(X_tr), "n_test": len(X_te),
+        "window": window, "seed": seed, "n_train": len(X_tr), "n_test": len(X_te),
         "RMSE": rmse(y_te, pred), "MAE": mae(y_te, pred),
         "persistence_RMSE": rmse(y_te, persist), "train_sec": round(train_sec, 1),
     }
     out["vs_persistence_%"] = round(100 * (out["persistence_RMSE"] - out["RMSE"]) / out["persistence_RMSE"], 2)
-    logger.info("window %3d분 → RMSE %.3f ℃ (persistence %.3f, %+.1f%%) | %.0fs",
-                window, out["RMSE"], out["persistence_RMSE"], out["vs_persistence_%"], train_sec)
+    logger.info("window %3d분 seed %d → RMSE %.3f ℃ (persistence %.3f, %+.1f%%) | %.0fs",
+                window, seed, out["RMSE"], out["persistence_RMSE"], out["vs_persistence_%"], train_sec)
     return out
 
 
@@ -69,16 +73,25 @@ def main() -> None:
         raise RuntimeError("optuna_trials.csv 없음 — 먼저 `python -m lstm.test.pipeline` 실행 필요.")
 
     df = data.load_sample()
-    rows = [run_one(df, w, params) for w in WINDOWS]
-    res = pd.DataFrame(rows)
+    raw = pd.DataFrame([run_one(df, w, params, s) for w in WINDOWS for s in SEEDS])
+    raw.to_csv(config.OUTPUT_DIR / "window_comparison_raw.csv", index=False)
+
+    res = (raw.groupby("window")
+              .agg(RMSE=("RMSE", "mean"), RMSE_std=("RMSE", "std"),
+                   MAE=("MAE", "mean"), persistence_RMSE=("persistence_RMSE", "mean"),
+                   train_sec=("train_sec", "mean"), n_train=("n_train", "first"))
+              .reset_index())
+    res["vs_persistence_%"] = (100 * (res["persistence_RMSE"] - res["RMSE"])
+                               / res["persistence_RMSE"]).round(2)
     res.to_csv(config.OUTPUT_DIR / "window_comparison.csv", index=False)
-    print("\n" + res.to_string(index=False))
+    print("\n" + res.round(3).to_string(index=False))
     plots.plot_window_comparison(res)
 
-    best = res.loc[res["RMSE"].idxmin()]
-    ref = res.loc[res["window"] == 180, "RMSE"].iloc[0]
-    logger.info("최적 윈도우 %d분 (RMSE %.3f). 180분 대비 %+.2f%%",
-                int(best["window"]), best["RMSE"], 100 * (best["RMSE"] - ref) / ref)
+    spread = res["RMSE"].max() - res["RMSE"].min()
+    noise = res["RMSE_std"].mean()
+    logger.info("윈도우 간 최대 차이 %.3f ℃ vs 시드 잡음 σ %.3f ℃ → %s",
+                spread, noise,
+                "구분 불가(윈도우 길이 무관)" if spread < 2 * noise else "유의미한 차이 있음")
 
 
 if __name__ == "__main__":

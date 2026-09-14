@@ -158,9 +158,17 @@ def plot_window_comparison(res: pd.DataFrame) -> Path:
     """윈도우 길이별 성능 — 긴 윈도우가 실제로 도움이 되나."""
     trend_style.apply_style()
     fig, axes = plt.subplots(1, 2, figsize=(12, 4.4))
-    axes[0].plot(res["window"], res["RMSE"], "o-", color="#2b6cb0", lw=2, ms=7)
+    err = res["RMSE_std"] if "RMSE_std" in res.columns else None
+    axes[0].errorbar(res["window"], res["RMSE"], yerr=err, fmt="o-", color="#2b6cb0",
+                     lw=2, ms=7, capsize=5, label="LSTM (시드 5개 평균±σ)")
     for x, v in zip(res["window"], res["RMSE"]):
         axes[0].text(x, v, f" {v:.2f}", fontsize=9)
+    if err is not None:
+        # 잡음대: 최저점 ±2σ. 이 띠 안에 들어오면 서로 구분할 수 없다.
+        lo = res["RMSE"].min()
+        axes[0].axhspan(lo - 2 * err.mean(), lo + 2 * err.mean(),
+                        color="#dd6b20", alpha=0.12,
+                        label=f"잡음대 ±2σ (σ={err.mean():.2f}℃)")
     axes[0].axhline(res["persistence_RMSE"].iloc[0], color="#a0aec0", ls="--",
                     label=f"persistence {res['persistence_RMSE'].iloc[0]:.2f}")
     axes[0].set_xlabel("입력 윈도우 [분]")
@@ -178,3 +186,66 @@ def plot_window_comparison(res: pd.DataFrame) -> Path:
     fig.suptitle("입력 윈도우 길이 비교 (하이퍼파라미터 고정)", fontsize=13)
     fig.tight_layout()
     return _save(fig, "06_window_comparison.png")
+
+
+def plot_split_overview(trend_sample: pd.DataFrame, pred: pd.DataFrame,
+                        faults: pd.DataFrame) -> Path:
+    """표본 **전체**(학습+테스트)를 한 장에 — 분할 경계와 FAULT 알람을 표시.
+
+    왜 필요한가: `02_prediction.png` 은 테스트 구간만 그려서 "어디까지가 학습이고
+    어디부터 예측인지"가 안 보인다. 이 그림은 표본 전 구간을 깔고
+      - 학습/purge/테스트 영역을 색으로 구분
+      - FAULT 알람 시각을 세로선으로
+      - LSTM 예측은 테스트 구간에만 (학습 구간은 예측하지 않으므로 없는 게 정상)
+    을 겹쳐 그린다.
+    """
+    trend_style.apply_style()
+    pred = pred.copy()
+    pred["target_time"] = pd.to_datetime(pred["target_time"])
+    te0, te1 = pred["target_time"].min(), pred["target_time"].max()
+    tr1 = te0 - pd.Timedelta(minutes=config.PURGE)
+
+    fig, axes = plt.subplots(2, 1, figsize=(15, 8),
+                             gridspec_kw={"height_ratios": [3, 1]}, sharex=True)
+    ax = axes[0]
+    ax.plot(trend_sample.index, trend_sample["TI33P"], lw=0.6, color="#2d3748",
+            label="실측 TI33P (표본 전체)")
+    ax.plot(pred["target_time"], pred["lstm"], lw=0.7, color="#e53e3e",
+            alpha=0.9, label="LSTM 예측 (테스트 구간에만)")
+    ax.axvspan(trend_sample.index.min(), tr1, color="#2b6cb0", alpha=0.07)
+    ax.axvspan(tr1, te0, color="#c53030", alpha=0.18)
+    ax.axvspan(te0, te1, color="#dd6b20", alpha=0.10)
+    ax.axvline(tr1, color="#2b6cb0", ls="--", lw=1.2)
+    ax.axvline(te0, color="#dd6b20", ls="--", lw=1.2)
+    ylim = ax.get_ylim()
+    ax.text(trend_sample.index.min(), ylim[1], "  학습 (80%)", va="top",
+            color="#2b6cb0", fontsize=11, fontweight="bold")
+    ax.text(te0, ylim[1], "  테스트 (20%)", va="top", color="#dd6b20",
+            fontsize=11, fontweight="bold")
+    ax.text(tr1, ylim[0], " purge", va="bottom", color="#c53030", fontsize=9)
+
+    for i, (t, tag) in enumerate(zip(faults["Time"], faults["tag"])):
+        ax.axvline(t, color="#805ad5", lw=1.4, alpha=0.8,
+                   label="FAULT 알람" if i == 0 else None)
+    ax.set_ylabel("TI33P [℃]")
+    ax.legend(loc="lower left", fontsize=9, ncol=2)
+    n_tr = int(((faults["Time"] >= trend_sample.index.min()) & (faults["Time"] < tr1)).sum())
+    n_te = int(((faults["Time"] >= te0) & (faults["Time"] <= te1)).sum())
+    ax.set_title(f"표본 전체 구간 — 학습/테스트 분할과 FAULT 알람  "
+                 f"(학습 {n_tr}건 / 테스트 {n_te}건)", fontsize=13)
+
+    r = axes[1]
+    resid = pd.Series(pred["residual_lstm"].to_numpy(), index=pred["target_time"])
+    r.plot(resid.index, resid.values, lw=0.4, color="#2b6cb0")
+    sd = resid.std()
+    for k, c in [(2, "#dd6b20"), (3, "#c53030")]:
+        r.axhline(k * sd, color=c, ls=":", lw=0.8)
+        r.axhline(-k * sd, color=c, ls=":", lw=0.8)
+    for t in faults["Time"]:
+        r.axvline(t, color="#805ad5", lw=1.4, alpha=0.8)
+    r.axvspan(te0, te1, color="#dd6b20", alpha=0.10)
+    r.set_ylabel("잔차 [℃]")
+    r.set_xlabel("시각")
+    r.set_title("LSTM 잔차 (±2σ/±3σ) — 테스트 구간에만 존재", fontsize=11)
+    fig.tight_layout()
+    return _save(fig, "07_split_overview.png")

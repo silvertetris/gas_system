@@ -168,6 +168,56 @@ def add_vacuum_regime(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
+def detect_maintenance(df: pd.DataFrame) -> pd.DataFrame:
+    """정비(개방정비) 구간을 찾아 목록으로 돌려준다.
+
+    규칙(config.MAINT_*): 수조가 식거나 진공이 풀린 상태가 24시간 이상 연속되면 정비.
+    근거·검증은 docs/htr31p_flow.md §10-1 — 정기점검 기록 7건이 전부 이 규칙으로 잡히고,
+    기록이 있는 2021·2024 는 보고서 기재 날짜와 일치한다.
+
+    Returns: 시작·종료·지속시간(h) 컬럼을 가진 DataFrame (시간순).
+    """
+    stop = ((df["TI-D2P"] < config.MAINT_BATH_TEMP_MAX)
+            | (df["PI-D2P"] < config.MAINT_VACUUM_MAX)).fillna(False)
+    run_id = (stop != stop.shift()).cumsum()
+    rows = []
+    for _, g in df[stop].groupby(run_id[stop]):
+        hours = len(g) / 60.0
+        if hours >= config.MAINT_MIN_HOURS:
+            rows.append({"start": g.index.min(), "end": g.index.max(), "hours": round(hours, 1)})
+    out = pd.DataFrame(rows).sort_values("start").reset_index(drop=True)
+    logger.info("정비 구간 %d건 탐지: %s", len(out),
+                ", ".join(f"{r.start:%Y-%m}" for r in out.itertuples()))
+    return out
+
+
+def add_maintenance_cycle(df: pd.DataFrame) -> pd.DataFrame:
+    """정비 사이 구간에 번호를 붙인다 — 열화 분석의 기본 단위.
+
+    `maint_cycle`  : 0,1,2… (정비를 지날 때마다 증가). 정비 구간 자체는 NaN.
+    `days_since_maint` : 직전 정비 종료 후 경과일. 열화는 이 값에 따라 진행한다고 본다.
+    """
+    maint = detect_maintenance(df)
+    cycle = pd.Series(0, index=df.index, dtype="float64")
+    since = pd.Series(np.nan, index=df.index, dtype="float64")
+    prev_end = df.index.min()
+    for i, r in enumerate(maint.itertuples()):
+        seg = (df.index > prev_end) & (df.index < r.start)
+        cycle.loc[seg] = i
+        since.loc[seg] = (df.index[seg] - prev_end).total_seconds() / 86400.0
+        cycle.loc[(df.index >= r.start) & (df.index <= r.end)] = np.nan   # 정비 중
+        prev_end = r.end
+    last = df.index > prev_end
+    cycle.loc[last] = len(maint)
+    since.loc[last] = (df.index[last] - prev_end).total_seconds() / 86400.0
+
+    df["maint_cycle"] = cycle
+    df["days_since_maint"] = since
+    logger.info("정비 주기 %d개 부여 (정비중 %d행 제외)",
+                int(cycle.max()) + 1, int(cycle.isna().sum()))
+    return df
+
+
 def add_heat_exchange(df: pd.DataFrame) -> pd.DataFrame:
     """열교환기 효율 ε 과 NTU 를 계산한다 — **신뢰 태그 3개만 쓰는 무가정 지표**.
 
@@ -204,12 +254,13 @@ def add_heat_exchange(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def run_trend_pipeline() -> pd.DataFrame:
-    """Trend 전처리 전체 실행: 로드 → 중복제거 → 1분 그리드 → era 정규화 → 유량 역산 → 진공 regime → ε/NTU."""
+    """Trend 전처리 전체 실행: 로드 → 중복제거 → 1분 그리드 → era 정규화 → 유량 역산 → 진공 regime → 정비주기 → ε/NTU."""
     df = load_trend_raw()
     df = dedup_by_time(df)
     grid = build_minute_grid(df)
     grid = add_era_normalization(grid, column="PI-D2P")
     grid = estimate_gas_flow(grid)
     grid = add_vacuum_regime(grid)
+    grid = add_maintenance_cycle(grid)
     grid = add_heat_exchange(grid)
     return grid
