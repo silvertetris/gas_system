@@ -143,6 +143,19 @@ def _loss_soft(net, D, idx, var_t61: float, hp: dict):
     return l
 
 
+def _accumulate(net, D, bidx, var_t61: float, hp: dict, n_mc: int, parts: int = 4):
+    """GPU 메모리 부족 시에만: 배치를 조각내 기울기를 누적한다. 조각 손실을 크기 비율로 가중해 평균 손실과 같은 방향."""
+    total = torch.zeros((), device=bidx.device)
+    for part in bidx.chunk(parts):
+        l = loss_fn(net, D, part, var_t61, hp, n_mc)
+        if not torch.isfinite(l):
+            return l.detach()
+        w = len(part) / len(bidx)
+        (l * w).backward()
+        total = total + l.detach() * w
+    return total
+
+
 def fit(train: str, D: dict, var_t61: float, tr: np.ndarray, va: np.ndarray, hp: dict | None = None,
         epochs: int = config.EPOCHS, patience: int = config.PATIENCE, n_mc: int = config.N_MC,
         dev: str = "cuda", log_every: int | None = 25, epoch_cb=None, history: list | None = None,
@@ -155,20 +168,33 @@ def fit(train: str, D: dict, var_t61: float, tr: np.ndarray, va: np.ndarray, hp:
     opt = torch.optim.Adam(net.parameters(), lr=hp["lr"], weight_decay=hp["weight_decay"])
     itr = torch.tensor(np.flatnonzero(tr), device=dev)
     iva = torch.tensor(np.flatnonzero(va), device=dev)
-    best, best_state, bad, n_skip = np.inf, None, 0, 0
+    best, best_state, bad, n_skip, n_oom = np.inf, None, 0, 0, 0
     for ep in range(epochs):
         net.train()
         perm = itr[torch.randperm(len(itr), device=dev)]
         tl, tn = torch.zeros((), device=dev), 0
         for i in range(0, len(perm), hp["batch"]):
             opt.zero_grad()
-            loss = loss_fn(net, D, perm[i:i + hp["batch"]], var_t61, hp, n_mc)
+            bidx = perm[i:i + hp["batch"]]
+            oom = False
+            try:
+                loss = loss_fn(net, D, bidx, var_t61, hp, n_mc)
+                if torch.isfinite(loss):
+                    loss.backward()
+            except torch.OutOfMemoryError:
+                oom = True
+            if oom:
+                # 여러 작업이 GPU 를 나눠 쓸 때만 발생(2026-09-14 LSTM 창 48·배치 4096). 평소 경로는 그대로다.
+                loss = None
+                opt.zero_grad(set_to_none=True)
+                torch.cuda.empty_cache()
+                n_oom += 1
+                loss = _accumulate(net, D, bidx, var_t61, hp, n_mc)
             # 안전장치: 손실·기울기가 유한하지 않은 배치는 갱신하지 않는다(한 배치로 가중치 전체가 NaN 이 되는 것 방지).
             #   유한한 배치에서는 계산이 그대로라 결과가 바뀌지 않는다. 건너뛴 수는 끝에 경고로 남긴다.
             if not torch.isfinite(loss):
                 n_skip += 1
                 continue
-            loss.backward()
             if not torch.isfinite(torch.nn.utils.clip_grad_norm_(net.parameters(), 5.0)):
                 n_skip += 1
                 continue
@@ -199,6 +225,8 @@ def fit(train: str, D: dict, var_t61: float, tr: np.ndarray, va: np.ndarray, hp:
             break
     if n_skip:
         log.warning("  비유한 배치 %d개 건너뜀 (epoch %d 까지)", n_skip, ep)
+    if n_oom:
+        log.warning("  GPU 메모리 부족 배치 %d개를 조각 누적으로 처리", n_oom)
     if best_state is not None:
         net.load_state_dict(best_state)
     net.eval()

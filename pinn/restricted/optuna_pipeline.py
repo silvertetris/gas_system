@@ -75,7 +75,9 @@ def run_train(train: str, out_dir, smoke: bool, dev: str, prep_only: bool = Fals
                                           for k, v in hp.items()})
         return s
 
-    study.optimize(objective, n_trials=2 if smoke else config.N_TRIALS, show_progress_bar=False)
+    # 텐서 적재 단계의 메모리 부족은 그 trial 만 실패로 두고 탐색을 계속한다(작업 전체가 죽지 않게)
+    study.optimize(objective, n_trials=2 if smoke else config.N_TRIALS, show_progress_bar=False,
+                   catch=(torch.OutOfMemoryError,))
     trials = study.trials_dataframe()
     trials.to_csv(out_dir / f"trials_{train}.csv", index=False, encoding="utf-8-sig")
     refine, hp = tune.params_to_hp(study.best_params, fixed)
