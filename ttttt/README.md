@@ -47,6 +47,12 @@ ttttt/
 | `13_physics_attribution.png` | 물리 분해 (빙결 − 평시) | Results |
 | `14_input_group_importance.png` | 입력 그룹 SHAP 비중 | Results |
 | `15_top10_input_features.png` | 상위 10 입력 SHAP | Results |
+| `16_outlet_temperature_trend.png` | 출구 온도 전체 추이 (일평균·일최저, 2013-10~, 시험구간 음영) — `poster/outlet_temp_trend.py` | Experimental details |
+| `17_outlet_temperature_winter.png` | 가장 추운 시험 겨울(2024-11~2025-03) 시간별 최저 출구 온도 | Experimental details |
+| `results_models/` | Research Results 모델별 분리 그림 18장 — 1 KF–soft PINN(최종) · 2 AE–soft PINN · 3 KF–hard PINN · 4 Neural network · 5 Gradient boosting × (a 온도 시험구간 · b 빙결확률 시험구간 · c 온도 10일 · d 빙결확률 10일, GBM 은 b·d 만) — `poster/results_model_timelines.py` | Results |
+| `results_compare/` | Research Results 비교 그림 14장 (계열 M) — 기준 KF–soft PINN vs 2 AE–soft PINN · 3 KF–hard PINN · 4 Neural network · 5 Gradient boosting × (a 온도 시험구간 · b 빙결확률 시험구간 · c 온도 10일 · d 빙결확률 10일, GBM 은 b·d 만) — `poster/results_compare_timelines.py` | Results |
+| `results_data_efficiency/` | 데이터 효율 비교 (계열 M) — 학습 데이터 최근 1·2·3·5년·전체로 줄였을 때 KF–soft PINN vs NN vs GBM: a 시험 AUC · b 경보 적중 · c 온도 RMSE · summary.csv (시험·검증 구간 고정, 시드 5) · `2y_KF-soft-PINN_vs_{Gradient-boosting,Neural-network}_probability.png` = 2년 학습 빙결확률 시계열 비교 (`poster/data_efficiency_timelines.py`) — 실험 `pinn/restricted/data_efficiency.py`, 그림 `poster/data_efficiency_plot.py` | Results |
+| `18_forecast_last_measurement.png` · `.csv` | 최종 모델을 마지막 유효 계측(2026-04-20 13:00)까지 적용 + 다음 6h 예측. 이후는 로거 값 고정(유효 데이터 없음) — `poster/forecast_after_test.py` | Results (선택) |
 
 | 파일 | 볼 패널 |
 |---|---|
